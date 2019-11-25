@@ -1,7 +1,11 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(minas_control)
 
-find_package(catkin REQUIRED COMPONENTS controller_manager diagnostic_updater transmission_interface hardware_interface sensor_msgs joint_limits_interface trajectory_msgs ethercat_manager soem realtime_tools)
+find_package(soem REQUIRED)
+
+find_package(Boost REQUIRED COMPONENTS thread)
+
+find_package(catkin REQUIRED COMPONENTS controller_manager diagnostic_updater transmission_interface hardware_interface sensor_msgs joint_limits_interface trajectory_msgs ethercat_manager realtime_tools)
 
 ###################################
 ## catkin specific configuration ##
@@ -16,28 +20,33 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${Boost_INCLUDE_DIRS}
   ## The following work around allows SOEM headers to include other SOEM headers.
   ## SOEM headers assume all headers are installed in a flat directory structure
   ## See https://github.com/smits/soem/issues/4 for more information.
-  ${soem_INCLUDE_DIRS}/soem
+  $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>/../
 )
 
 ## Declare a C++ library
 add_library(minas_client src/minas_client.cpp)
 
 ## Declare a C++ executable for ROS_CONTROL
-add_executable(main src/main.cpp src/minas_hardware_interface.cpp)
+# add_executable(main src/main.cpp src/minas_hardware_interface.cpp)
 
 ## Declare a C++ executable
-add_executable(slaveinfo src/slaveinfo.cpp)
+#add_executable(slaveinfo src/slaveinfo.cpp)
 add_executable(simple_test src/simple_test.cpp)
 add_executable(reset src/reset.cpp)
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(main ${catkin_LIBRARIES} minas_client)
-target_link_libraries(slaveinfo ${catkin_LIBRARIES})
-target_link_libraries(simple_test ${catkin_LIBRARIES} minas_client)
+# target_link_libraries(main ${catkin_LIBRARIES} minas_client)
+#target_link_libraries(slaveinfo ${catkin_LIBRARIES})
+target_link_directories(simple_test PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
+target_link_libraries(simple_test ${catkin_LIBRARIES} minas_client soem)
+target_link_directories(reset PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
 target_link_libraries(reset ${catkin_LIBRARIES} minas_client)
+target_link_directories(minas_client PRIVATE ${Boost_LIBRARY_DIRS})
+target_link_libraries(minas_client ${catkin_LIBRARIES} ${Boost_LIBRARIES})
 
 function(set_sudo_binary tgt)
   get_target_property(loc ${tgt} "LOCATION")
@@ -47,27 +56,30 @@ function(set_sudo_binary tgt)
     DEPENDS bin/${tgt})
   add_custom_target(sudo_${tgt}_all ALL DEPENDS sudo_${tgt})
 endfunction()
-set_sudo_binary(main)
-set_sudo_binary(slaveinfo)
-set_sudo_binary(simple_test)
-set_sudo_binary(reset)
+# set_sudo_binary(main)
+# set_sudo_binary(slaveinfo)
+# set_sudo_binary(simple_test)
+# set_sudo_binary(reset)
 
 #############
 ## Install ##
 #############
 
 ## Mark executables and/or libraries for installation
-install(TARGETS slaveinfo simple_test reset minas_client main
+install(TARGETS minas_client
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
+)
+install(TARGETS simple_test reset
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 # https://github.com/tork-a/minas/issues/20 / http://stackoverflow.com/questions/3352041/creating-binary-with-cmake-removes-runtime-path
-set_property(TARGET slaveinfo PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
+# set_property(TARGET slaveinfo PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_property(TARGET simple_test PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_property(TARGET reset PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 set_property(TARGET minas_client PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
-set_property(TARGET main PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
+# set_property(TARGET main PROPERTY INSTALL_RPATH_USE_LINK_PATH TRUE)
 
 install(DIRECTORY include/${PROJECT_NAME}/
   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION})
@@ -91,6 +103,8 @@ endif()
 #############
 ## Release ##
 #############
+
+return()
 
 # debbuild
 # catkin build minas_control --make-args debbuild

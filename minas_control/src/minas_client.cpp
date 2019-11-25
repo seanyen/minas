@@ -20,6 +20,7 @@
 
 #include <stdio.h>
 #include <minas_control/minas_client.h>
+#include <windows.h>
 
 // An effort to keep the lines less than 100 char long
 namespace minas_control
@@ -58,10 +59,6 @@ void MinasClient::writeOutputs(const MinasOutput& output)
   map[18] = (output.target_velocity >>  8) & 0x00ff;
   map[19] = (output.target_velocity >> 16) & 0x00ff;
   map[20] = (output.target_velocity >> 24) & 0x00ff;
-  map[21] = (output.position_offset) & 0x00ff;
-  map[22] = (output.position_offset >>  8) & 0x00ff;
-  map[23] = (output.position_offset >> 16) & 0x00ff;
-  map[24] = (output.position_offset >> 24) & 0x00ff;
 
   for (unsigned i = 0; i < 25; ++i)
   {
@@ -86,7 +83,6 @@ MinasInput MinasClient::readInputs() const
   input.torque_actual_value		= *(uint16 *)(map+13);
   input.touch_probe_status		= *(uint16 *)(map+15);
   input.touch_probe_posl_pos_value	= *(uint32 *)(map+17);
-  input.digital_inputs			= *(uint32 *)(map+21);
 
   if (input.error_code >> 8 == 0xff) {
     int ecode = (input.error_code)&0x00ff;
@@ -121,7 +117,6 @@ MinasOutput MinasClient::readOutputs() const
   output.max_motor_speed		= *(uint32 *)(map+11);
   output.touch_probe_function		= *(uint16 *)(map+15);
   output.target_velocity		= *(uint32 *)(map+17);
-  output.position_offset		= *(uint32 *)(map+21);
 
   return output;
 }
@@ -146,7 +141,8 @@ void MinasClient::reset()
 	   input.error_code, input.statusword, input.operation_mode, input.position_actual_value);
       printf("Waiting for Fault Reset...\n");
     }
-    usleep(SLEEP_TIME_MS*1000);
+    //usleep(SLEEP_TIME_MS*1000);
+    Sleep(1000);
     input = readInputs();
   }
   printf("Fault was cleared\n");
@@ -160,27 +156,31 @@ void MinasClient::servoOn()
   memset(&output, 0x00, sizeof(MinasOutput));
   output.operation_mode = 1; // pp (profile position mode)
   int loop = 0;
-  while (getPDSStatus(input) != OPERATION_ENABLED) {
-    switch ( getPDSStatus(input) ) {
-      case SWITCH_DISABLED:
-	output.controlword = 0x0006; // move to ready to switch on
-	break;
-      case READY_SWITCH:
-	output.controlword = 0x0007; // move to switched on
-	break;
-      case SWITCHED_ON:
-	output.controlword = 0x000f; // move to operation enabled
-	break;
-      case OPERATION_ENABLED:
-	break;
-      default:
-	printf("unknown status");
-	return;
-      }
+  while (getPDSStatus(input) != OPERATION_ENABLED)
+  {
+    switch (getPDSStatus(input))
+    {
+    case SWITCH_DISABLED:
+      output.controlword = 0x0006; // move to ready to switch on
+      break;
+    case READY_SWITCH:
+      output.controlword = 0x0007; // move to switched on
+      break;
+    case SWITCHED_ON:
+      output.controlword = 0x000f; // move to operation enabled
+      break;
+    case OPERATION_ENABLED:
+      break;
+    default:
+      printf("unknown status");
+      return;
+    }
     writeOutputs(output);
-    usleep(SLEEP_TIME_MS*1000);
+    //usleep(SLEEP_TIME_MS*1000);
+    Sleep(1000);
     input = readInputs();
-    if (loop++ % 100 == 1) printPDSStatus(input);
+    if (loop++ % 100 == 1)
+      printPDSStatus(input);
   }
 }
 
@@ -208,7 +208,8 @@ void MinasClient::servoOff()
 	break;
     }
     writeOutputs(output);
-    usleep(SLEEP_TIME_MS*1000);
+    //usleep(SLEEP_TIME_MS*1000);
+    Sleep(1000);
     input = readInputs();
     if (loop++ % 100 == 1) printPDSStatus(input);
   }
@@ -253,11 +254,13 @@ PDS_OPERATION MinasClient::getPDSOperation(const MinasInput input) const
   case 9: return CYCLIC_SYNCHRONOUS_VELOCITY_MODE;	break; // csv
   case 10: return CYCLIC_SYNCHRONOUS_TORQUE_MODE;	break; // cst
   }
+  return NO_MODE_CHANGE;
 }
 
 PDS_STATUS MinasClient::getPDSControl(const MinasInput input) const
 {
   uint16 statusword = input.statusword;
+  return UNKNOWN;
 }
 
 void MinasClient::printPDSStatus(const MinasInput input) const
@@ -441,7 +444,7 @@ void MinasClient::setProfileVelocity(uint32_t val)
 {
   // 6091h, unit: pulse, range: 0 - 4294967295, U32
   uint32_t u32val = (uint32_t)val;
-  manager_.writeSDO<uint32_t>(slave_no_, 0x6081, 0x00, u32val);
+  manager_.writeSDO<uint32_t>(slave_no_, 0x6091, 0x00, u32val);
 }
 
 void MinasClient::setInterpolationTimePeriod(int us)

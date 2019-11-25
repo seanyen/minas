@@ -1,7 +1,9 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(ethercat_manager)
 
-find_package(catkin REQUIRED COMPONENTS roscpp soem)
+find_package(soem REQUIRED)
+
+find_package(catkin REQUIRED COMPONENTS roscpp)
 
 ###################################
 ## catkin specific configuration ##
@@ -22,7 +24,7 @@ include_directories(
   ## The following work around allows SOEM headers to include other SOEM headers.
   ## SOEM headers assume all headers are installed in a flat directory structure
   ## See https://github.com/smits/soem/issues/4 for more information.
-  ${soem_INCLUDE_DIRS}/soem
+  $<TARGET_PROPERTY:soem,INTERFACE_INCLUDE_DIRECTORIES>/../
 )
 
 ## Declare a C++ library
@@ -31,7 +33,8 @@ add_library(ethercat_manager
 )
 
 ## Specify libraries to link a library or executable target against
-target_link_libraries(ethercat_manager  ${catkin_LIBRARIES})
+target_link_directories(ethercat_manager PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
+target_link_libraries(ethercat_manager ${catkin_LIBRARIES} soem)
 
 #############
 ## Install ##
@@ -41,7 +44,7 @@ target_link_libraries(ethercat_manager  ${catkin_LIBRARIES})
 install(TARGETS ethercat_manager
   ARCHIVE DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
-  RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
+  RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
 )
 
 install(DIRECTORY include/${PROJECT_NAME}/

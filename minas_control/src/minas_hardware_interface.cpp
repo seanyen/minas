@@ -86,7 +86,6 @@ namespace minas_control
       { // (csp) cyclic synchronous position mode
 	//output.target_position = current_position;
 	output.target_position = 0;
-	output.position_offset = current_position;
       }
     output.max_motor_speed = max_motor_speed;  // rad/min
     output.target_torque = 0;    // 0% (unit 0.1%)
@@ -127,7 +126,6 @@ namespace minas_control
     ROS_INFO("%s: home_encoder_offset = %d", joint.name_.c_str(), joint.home_encoder_offset_);
 
     ROS_WARN("target position = %08x", output.target_position);
-    ROS_WARN("position offset = %08x", output.position_offset);
     joint.cmd_ = joint.pos_ = (current_position - joint.home_encoder_offset_) / PULSE_PER_REVOLUTE;
     joint.vel_ = joint.eff_ = 0;
     ROS_INFO("Initialize EtherCATJoint .. done");

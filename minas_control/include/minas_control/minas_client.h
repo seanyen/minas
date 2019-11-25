@@ -51,7 +51,6 @@ typedef struct {
   uint16 torque_actual_value;		// 6077h : Torque actual value
   uint16 touch_probe_status;		// 60B9h : Touch probe status
   uint32 touch_probe_posl_pos_value;	// 60BAh : Touch probe pos1 pos value
-  uint32 digital_inputs;		// 60FDh : Digital inputs
 } MinasInput;
 
 typedef struct {
@@ -63,7 +62,6 @@ typedef struct {
   uint32 max_motor_speed;		// 6080h : Max motor speed
   uint16 touch_probe_function;		// 60B8h : Touch Probe function
   uint32 target_velocity;		// 60FFh : Target Velocity
-  uint32 position_offset;		// 60B0h : Position Offset
 } MinasOutput;
 
 typedef enum {NOT_READY, SWITCH_DISABLED, READY_SWITCH, SWITCHED_ON, OPERATION_ENABLED, QUICK_STOP, FAULT_REACTION, FAULT, UNKNOWN} PDS_STATUS;  // Statusword(6041h) SX-DSV02470 p.78

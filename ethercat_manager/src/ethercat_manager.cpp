@@ -30,7 +30,9 @@
 
 #include "ethercat_manager/ethercat_manager.h"
 
+#ifndef _WIN32
 #include <unistd.h>
+#endif
 #include <stdio.h>
 #include <time.h>
 
@@ -47,6 +49,8 @@
 #include <soem/ethercatconfig.h>
 #include <soem/ethercatprint.h>
 
+#include <windows.h>
+
 namespace 
 {
 static const unsigned THREAD_SLEEP_TIME = 1000; // 1 ms
@@ -60,6 +64,76 @@ void timespecInc(struct timespec &tick, int nsec)
       tick.tv_nsec -= NSEC_PER_SECOND;
       tick.tv_sec++;
     }
+}
+
+#define CLOCK_REALTIME 0
+#define TIMER_ABSTIME 0
+
+LARGE_INTEGER
+getFILETIMEoffset()
+{
+  SYSTEMTIME s;
+  FILETIME f;
+  LARGE_INTEGER t;
+
+  s.wYear = 1970;
+  s.wMonth = 1;
+  s.wDay = 1;
+  s.wHour = 0;
+  s.wMinute = 0;
+  s.wSecond = 0;
+  s.wMilliseconds = 0;
+  SystemTimeToFileTime(&s, &f);
+  t.QuadPart = f.dwHighDateTime;
+  t.QuadPart <<= 32;
+  t.QuadPart |= f.dwLowDateTime;
+  return (t);
+}
+
+int
+clock_gettime(int X, struct timespec *tv)
+{
+  LARGE_INTEGER           t;
+  FILETIME            f;
+  double                  microseconds;
+  static LARGE_INTEGER    offset;
+  static double           frequencyToMicroseconds;
+  static int              initialized = 0;
+  static BOOL             usePerformanceCounter = 0;
+
+  if (!initialized) {
+    LARGE_INTEGER performanceFrequency;
+    initialized = 1;
+    usePerformanceCounter = QueryPerformanceFrequency(&performanceFrequency);
+    if (usePerformanceCounter) {
+      QueryPerformanceCounter(&offset);
+      frequencyToMicroseconds = (double)performanceFrequency.QuadPart / 1000000.;
+    } else {
+      offset = getFILETIMEoffset();
+      frequencyToMicroseconds = 10.;
+    }
+  }
+  if (usePerformanceCounter) QueryPerformanceCounter(&t);
+  else {
+    GetSystemTimeAsFileTime(&f);
+    t.QuadPart = f.dwHighDateTime;
+    t.QuadPart <<= 32;
+    t.QuadPart |= f.dwLowDateTime;
+  }
+
+  t.QuadPart -= offset.QuadPart;
+  microseconds = (double)t.QuadPart / frequencyToMicroseconds;
+  t.QuadPart = microseconds;
+  tv->tv_sec = t.QuadPart / 1000000;
+  tv->tv_nsec = t.QuadPart % 1000000 * 1000;
+  return (0);
+}
+
+int clock_nanosleep(int clock_id, int flags,
+       const struct timespec *rqtp, struct timespec *rmtp)
+{
+  Sleep(1);
+  return 0;
 }
 
 void handleErrors()
@@ -150,9 +224,9 @@ void cycleWorker(boost::mutex& mutex, bool& stop_flag)
     clock_gettime(CLOCK_REALTIME, &before);
     double overrun_time = (before.tv_sec + double(before.tv_nsec)/NSEC_PER_SECOND) -  (tick.tv_sec + double(tick.tv_nsec)/NSEC_PER_SECOND);
     if (overrun_time > 0.0)
-      {
-	fprintf(stderr, "  overrun: %f\n", overrun_time);
-      }
+    {
+      //fprintf(stderr, "  overrun: %f\n", overrun_time);
+    }
     //usleep(THREAD_SLEEP_TIME);
     clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &tick, NULL);
     timespecInc(tick, period);
@@ -198,7 +272,7 @@ EtherCatManager::~EtherCatManager()
   cycle_thread_.join();
 }
 
-#define IF_MINAS(_ec_slave) (((int)_ec_slave.eep_man == 0x066f) && ((((0xf0000000&(int)ec_slave[cnt].eep_id)>>28) == 0x5) || (((0xf0000000&(int)ec_slave[cnt].eep_id)>>28) == 0xD)))
+#define IF_MINAS(_ec_slave) ((int)_ec_slave.eep_man == 0x010a)
 bool EtherCatManager::initSoem(const std::string& ifname) {
   // Copy string contents because SOEM library doesn't 
   // practice const correctness
@@ -238,11 +312,11 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
   }
   printf("Found %d MINAS Drivers\n", num_clients_);
 
-
   /*
-    SET PDO maping 4    SX-DSV02470 p.52
+    SET PDO maping 4    SIM2050D
 			Index	  Size(bit)	Name
-    RxPDO (1603h)	6040h 00h 16 Controlword
+    RxPDO (0x1600)
+      6040h 00h 16 Controlword
 			6060h 00h  8 Modes of operation
 			6071h 00h 16 Target Torque
 			6072h 00h 16 Max torque
@@ -250,7 +324,7 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
 			6080h 00h 32 Max motor speed
 			60B8h 00h 16 Touch probe function
 			60FFh 00h 32 Target Velocity
-    TxPDO (1A03h)
+    TxPDO (0x1A00)
 			603Fh 00h 16 Error code
 			6041h 00h 16 Statusword
 			6061h 00h  8 Modes of operation display
@@ -262,61 +336,24 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
 			60FDh 00h 32 Digital inputs
    */
   if (ec_statecheck(0, EC_STATE_PRE_OP, EC_TIMEOUTSTATE*4) != EC_STATE_PRE_OP)
-    {
-      fprintf(stderr, "Could not set EC_STATE_PRE_OP\n");
-      return false;
-    }
+  {
+    fprintf(stderr, "Could not set EC_STATE_PRE_OP\n");
+    return false;
+  }
 
-  // extend PDO mapping 4 see p. 53 of SX-DSV02470
+  /* Map velocity PDO assignment via Complete Access*/
+  uint16 map_TxPDO[] = {0x0008, 0x603F, 0x6041, 0x6061, 0x6064, 0x606C, 0x6077, 0x60B9, 0x60BA};
+  uint16 map_RxPDO[] = {0x0008, 0x6040, 0x6060, 0x6071, 0x6072, 0x607A, 0x6080, 0x60B8, 0x60FF};
+
   for( int cnt = 1 ; cnt <= ec_slavecount ; cnt++)
-    {
-      if (! IF_MINAS(ec_slave[cnt])) continue;
-      int ret = 0, l;
-      uint8_t num_entries;
-      l = sizeof(num_entries);
-      ret += ec_SDOread(cnt, 0x1603, 0x00, FALSE, &l, &num_entries, EC_TIMEOUTRXM);
-      printf("len = %d\n", num_entries);
-      num_entries = 0;
-      ret += ec_SDOwrite(cnt, 0x1603, 0x00, FALSE, sizeof(num_entries), &num_entries, EC_TIMEOUTRXM);
-      // add position offset (60B0 / 00h / I32)
-      uint32_t mapping;
-      mapping = 0x60B00020;
-      ret += ec_SDOwrite(cnt, 0x1603, 0x09, FALSE, sizeof(mapping), &mapping, EC_TIMEOUTRXM);
-      //
-      num_entries = 9;
-      ret += ec_SDOwrite(cnt, 0x1603, 0x00, FALSE, sizeof(num_entries), &num_entries, EC_TIMEOUTRXM);
-      ret += ec_SDOread(cnt, 0x1603, 0x00, FALSE, &l, &num_entries, EC_TIMEOUTRXM);
-      printf("len = %d\n", num_entries);
-    }
-
-  // use PDO mapping 4
-  for( int cnt = 1 ; cnt <= ec_slavecount ; cnt++)
-    {
-      if (! IF_MINAS(ec_slave[cnt])) continue;
-      int ret = 0, l;
-      uint8_t num_pdo ;
-      // set 0 change PDO mapping index
-      num_pdo = 0;
-      ret += ec_SDOwrite(cnt, 0x1c12, 0x00, FALSE, sizeof(num_pdo), &num_pdo, EC_TIMEOUTRXM);
-      // set to default PDO mapping 4
-      uint16_t idx_rxpdo = 0x1603;
-      ret += ec_SDOwrite(cnt, 0x1c12, 0x01, FALSE, sizeof(idx_rxpdo), &idx_rxpdo, EC_TIMEOUTRXM);
-      // set number of assigned PDOs
-      num_pdo = 1;
-      ret += ec_SDOwrite(cnt, 0x1c12, 0x00, FALSE, sizeof(num_pdo), &num_pdo, EC_TIMEOUTRXM);
-      printf("RxPDO mapping object index %d = %04x ret=%d\n", cnt, idx_rxpdo, ret);
-
-      // set 0 change PDO mapping index
-      num_pdo = 0;
-      ret += ec_SDOwrite(cnt, 0x1c13, 0x00, FALSE, sizeof(num_pdo), &num_pdo, EC_TIMEOUTRXM);
-      // set to default PDO mapping 4
-      uint16_t idx_txpdo = 0x1a03;
-      ret += ec_SDOwrite(cnt, 0x1c13, 0x01, FALSE, sizeof(idx_txpdo), &idx_txpdo, EC_TIMEOUTRXM);
-      // set number of assigned PDOs
-      num_pdo = 1;
-      ret += ec_SDOwrite(cnt, 0x1c13, 0x00, FALSE, sizeof(num_pdo), &num_pdo, EC_TIMEOUTRXM);
-      printf("TxPDO mapping object index %d = %04x ret=%d\n", cnt, idx_txpdo, ret);
-    }
+  {
+    if (! IF_MINAS(ec_slave[cnt])) continue;
+  
+    int ret = ec_SDOwrite(cnt, 0x1A00, 0x00, TRUE, sizeof(map_TxPDO), &map_TxPDO, EC_TIMEOUTSAFE);
+    printf("ret, %d\n", ret);
+    ret = ec_SDOwrite(cnt, 0x1600, 0x00, TRUE, sizeof(map_RxPDO), &map_RxPDO, EC_TIMEOUTSAFE);
+    printf("ret, %d\n", ret);
+  }
 
   // configure IOMap
   int iomap_size = ec_config_map(iomap_);
@@ -431,10 +468,10 @@ uint8_t EtherCatManager::readInput(int slave_no, uint8_t channel) const
     fprintf(stderr, "ERROR : slave_no(%d) is larger than ec_slavecount(%d)\n", slave_no, ec_slavecount);
     exit(1);
   }
-  if (channel*8 >= ec_slave[slave_no].Ibits) {
-    fprintf(stderr, "ERROR : channel(%d) is larget thatn Input bits (%d)\n", channel*8, ec_slave[slave_no].Ibits);
-    exit(1);
-  }
+  //if (channel*8 >= ec_slave[slave_no].Ibits) {
+  //  fprintf(stderr, "ERROR : channel(%d) is larget thatn Input bits (%d)\n", channel*8, ec_slave[slave_no].Ibits);
+  //  exit(1);
+  //}
   return ec_slave[slave_no].inputs[channel];
 }
 
