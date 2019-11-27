@@ -34,13 +34,14 @@ add_library(minas_client src/minas_client.cpp)
 # add_executable(main src/main.cpp src/minas_hardware_interface.cpp)
 
 ## Declare a C++ executable
-#add_executable(slaveinfo src/slaveinfo.cpp)
+add_executable(slaveinfo src/slaveinfo.cpp)
 add_executable(simple_test src/simple_test.cpp)
 add_executable(reset src/reset.cpp)
 
 ## Specify libraries to link a library or executable target against
 # target_link_libraries(main ${catkin_LIBRARIES} minas_client)
-#target_link_libraries(slaveinfo ${catkin_LIBRARIES})
+target_link_directories(slaveinfo PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
+target_link_libraries(slaveinfo ${catkin_LIBRARIES} soem)
 target_link_directories(simple_test PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
 target_link_libraries(simple_test ${catkin_LIBRARIES} minas_client soem)
 target_link_directories(reset PRIVATE $<TARGET_PROPERTY:soem,INTERFACE_LINK_DIRECTORIES>)
@@ -71,7 +72,7 @@ install(TARGETS minas_client
   LIBRARY DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}
   RUNTIME DESTINATION ${CATKIN_GLOBAL_BIN_DESTINATION}
 )
-install(TARGETS simple_test reset
+install(TARGETS simple_test reset slaveinfo
   RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 )
 # https://github.com/tork-a/minas/issues/20 / http://stackoverflow.com/questions/3352041/creating-binary-with-cmake-removes-runtime-path

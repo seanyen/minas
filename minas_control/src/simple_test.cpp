@@ -118,7 +118,7 @@ void help()
 int main(int argc, char *argv[])
 {
   int operation_mode = 0x09; // (pp) position profile mode
-  std::string ifname = "\\Device\\NPF_{DD914D70-13DE-44F7-8B1A-8905609D0255}";
+  std::string ifname = "\\Device\\NPF_{A55ECAF7-27D9-4C86-B0C1-B48F3FB4F363}";
 
   printf("MINAS Simple Test using SOEM (Simple Open EtherCAT Master)\n");
 
@@ -159,10 +159,8 @@ int main(int argc, char *argv[])
     /* start slaveinfo */
     ethercat::EtherCatManager manager(ifname);
     std::vector<minas_control::MinasClient *> clients;
-    for (int i = 0; i < manager.getNumClinets(); i++)
-    {
-      clients.push_back(new minas_control::MinasClient(manager, i + 1));
-    }
+    //clients.push_back(new minas_control::MinasClient(manager, 2));
+    clients.push_back(new minas_control::MinasClient(manager, 4));
 
     for (std::vector<minas_control::MinasClient *>::iterator it = clients.begin(); it != clients.end(); ++it)
     {
@@ -278,7 +276,7 @@ int main(int argc, char *argv[])
       double overrun_time = (before.tv_sec + double(before.tv_nsec) / NSEC_PER_SECOND) - (tick.tv_sec + double(tick.tv_nsec) / NSEC_PER_SECOND);
       if (overrun_time > 0.0)
       {
-        fprintf(stderr, "  overrun: %f", overrun_time);
+        //fprintf(stderr, "  overrun: %f", overrun_time);
       }
       clock_nanosleep(CLOCK_REALTIME, TIMER_ABSTIME, &tick, NULL);
     }

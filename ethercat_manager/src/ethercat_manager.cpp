@@ -272,6 +272,49 @@ EtherCatManager::~EtherCatManager()
   cycle_thread_.join();
 }
 
+static int simco_setup(uint16 slave)
+{
+    /*
+    PDO mapping according to CoE :
+    SM2 outputs
+        addr b   index: sub bitl data_type    name
+    [0x0016.0] 0x6040:0x00 0x10 UNSIGNED16   Controlword
+    [0x0018.0] 0x607A:0x00 0x20 INTEGER32    Target Position
+    [0x001C.0] 0x60FF:0x00 0x20 INTEGER32    Target Velocity
+    [0x0020.0] 0x6083:0x00 0x20 UNSIGNED32   Profile Acceleration
+    [0x0024.0] 0x6084:0x00 0x20 UNSIGNED32   Profile Deceleration
+    [0x0028.0] 0x6086:0x00 0x10 INTEGER16    Motion Profile Type
+    [0x002A.0] 0x6060:0x00 0x08 INTEGER8     Modes Of Operation
+    [0x002B.0] 0x0000:0x00 0x00
+    SM3 inputs
+        addr b   index: sub bitl data_type    name
+    [0x004A.0] 0x6041:0x00 0x10 UNSIGNED16   Statusword
+    [0x004C.0] 0x6064:0x00 0x20 INTEGER32    Position Actual Value
+    [0x0050.0] 0x606C:0x00 0x20 INTEGER32    Velocity Actual Value
+    [0x0054.0] 0x3609:0x02 0x20 INTEGER32    Iq Actual Filtered
+    [0x0058.0] 0x6061:0x00 0x08 INTEGER8     Modes Of Operation Display
+    [0x0059.0] 0x3D00:0x02 0x20 UNSIGNED32   Group Error
+    */
+    uint8 u8val = 0;
+    ec_SDOwrite(slave, 0x1c12, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+    u8val = 0;
+    ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+    /* Map velocity PDO assignment via Complete Access*/
+    uint16 assignment_TxPDO[] = {0x1a0b};
+    uint16 assignment_RxPDO[] = {0x160a};
+
+    ec_SDOwrite(4, 0x1C12, 0x01, FALSE, sizeof(assignment_RxPDO), &assignment_RxPDO, EC_TIMEOUTSAFE);
+    u8val = 1;
+    ec_SDOwrite(slave, 0x1c12, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+    ec_SDOwrite(4, 0x1C13, 0x01, FALSE, sizeof(assignment_TxPDO), &assignment_TxPDO, EC_TIMEOUTSAFE);
+    u8val = 1;
+    ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+    return 0;
+}
+
 #define IF_MINAS(_ec_slave) ((int)_ec_slave.eep_man == 0x010a)
 bool EtherCatManager::initSoem(const std::string& ifname) {
   // Copy string contents because SOEM library doesn't 
@@ -312,47 +355,17 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
   }
   printf("Found %d MINAS Drivers\n", num_clients_);
 
-  /*
-    SET PDO maping 4    SIM2050D
-			Index	  Size(bit)	Name
-    RxPDO (0x1600)
-      6040h 00h 16 Controlword
-			6060h 00h  8 Modes of operation
-			6071h 00h 16 Target Torque
-			6072h 00h 16 Max torque
-			607Ah 00h 32 Target Position
-			6080h 00h 32 Max motor speed
-			60B8h 00h 16 Touch probe function
-			60FFh 00h 32 Target Velocity
-    TxPDO (0x1A00)
-			603Fh 00h 16 Error code
-			6041h 00h 16 Statusword
-			6061h 00h  8 Modes of operation display
-			6064h 00h 32 Position actual value
-			606Ch 00h 32 Velocity actual value
-			6077h 00h 16 Torque actual value
-			60B9h 00h 16 Touch probe status
-			60BAh 00h 32 Touch probe pos1 pos val
-			60FDh 00h 32 Digital inputs
-   */
   if (ec_statecheck(0, EC_STATE_PRE_OP, EC_TIMEOUTSTATE*4) != EC_STATE_PRE_OP)
   {
     fprintf(stderr, "Could not set EC_STATE_PRE_OP\n");
     return false;
   }
 
-  /* Map velocity PDO assignment via Complete Access*/
-  uint16 map_TxPDO[] = {0x0008, 0x603F, 0x6041, 0x6061, 0x6064, 0x606C, 0x6077, 0x60B9, 0x60BA};
-  uint16 map_RxPDO[] = {0x0008, 0x6040, 0x6060, 0x6071, 0x6072, 0x607A, 0x6080, 0x60B8, 0x60FF};
-
   for( int cnt = 1 ; cnt <= ec_slavecount ; cnt++)
   {
     if (! IF_MINAS(ec_slave[cnt])) continue;
-  
-    int ret = ec_SDOwrite(cnt, 0x1A00, 0x00, TRUE, sizeof(map_TxPDO), &map_TxPDO, EC_TIMEOUTSAFE);
-    printf("ret, %d\n", ret);
-    ret = ec_SDOwrite(cnt, 0x1600, 0x00, TRUE, sizeof(map_RxPDO), &map_RxPDO, EC_TIMEOUTSAFE);
-    printf("ret, %d\n", ret);
+
+    ec_slave[cnt].PO2SOconfig = &simco_setup;
   }
 
   // configure IOMap
@@ -419,7 +432,7 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
       l = sizeof(sync_mode);
       ret += ec_SDOread(cnt, 0x1c32, 0x01, FALSE, &l, &sync_mode, EC_TIMEOUTRXM);
       l = sizeof(cycle_time);
-      ret += ec_SDOread(cnt, 0x1c32, 0x01, FALSE, &l, &cycle_time, EC_TIMEOUTRXM);
+      ret += ec_SDOread(cnt, 0x1c32, 0x02, FALSE, &l, &cycle_time, EC_TIMEOUTRXM);
       l = sizeof(minimum_cycle_time);
       ret += ec_SDOread(cnt, 0x1c32, 0x05, FALSE, &l, &minimum_cycle_time, EC_TIMEOUTRXM);
       l = sizeof(sync0_cycle_time);
@@ -482,10 +495,10 @@ uint8_t EtherCatManager::readOutput(int slave_no, uint8_t channel) const
     fprintf(stderr, "ERROR : slave_no(%d) is larger than ec_slavecount(%d)\n", slave_no, ec_slavecount);
     exit(1);
   }
-  if (channel*8 >= ec_slave[slave_no].Obits) {
-    fprintf(stderr, "ERROR : channel(%d) is larget thatn Output bits (%d)\n", channel*8, ec_slave[slave_no].Obits);
-    exit(1);
-  }
+  //if (channel*8 >= ec_slave[slave_no].Obits) {
+  //  fprintf(stderr, "ERROR : channel(%d) is larget thatn Output bits (%d)\n", channel*8, ec_slave[slave_no].Obits);
+  //  exit(1);
+  //}
   return ec_slave[slave_no].outputs[channel];
 }
 

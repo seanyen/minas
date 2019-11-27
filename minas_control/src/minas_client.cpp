@@ -38,27 +38,30 @@ void MinasClient::writeOutputs(const MinasOutput& output)
   // PDO Mapping 4 + offset 200 bit = 25  byte
   uint8_t map[25] = {0}; // array containing all 15 output registers
 
+/*
+    SM2 outputs
+        addr b   index: sub bitl data_type    name
+    [0x0016.0] 0x6040:0x00 0x10 UNSIGNED16   Controlword
+    [0x0018.0] 0x607A:0x00 0x20 INTEGER32    Target Position
+    [0x001C.0] 0x60FF:0x00 0x20 INTEGER32    Target Velocity
+    [0x0020.0] 0x6083:0x00 0x20 UNSIGNED32   Profile Acceleration
+    [0x0024.0] 0x6084:0x00 0x20 UNSIGNED32   Profile Deceleration
+    [0x0028.0] 0x6086:0x00 0x10 INTEGER16    Motion Profile Type
+    [0x002A.0] 0x6060:0x00 0x08 INTEGER8     Modes Of Operation
+    [0x002B.0] 0x0000:0x00 0x00
+    */
+
   map[0] = (output.controlword) & 0x00ff;
   map[1] = (output.controlword >> 8) & 0x00ff;
-  map[2] = output.operation_mode;
-  map[3] = (output.target_torque) & 0x00ff;
-  map[4] = (output.target_torque >>  8) & 0x00ff;
-  map[5] = (output.max_torque) & 0x00ff;
-  map[6] = (output.max_torque >>  8) & 0x00ff;
-  map[7] = (output.target_position) & 0x00ff;
-  map[8] = (output.target_position >>  8) & 0x00ff;
-  map[9] = (output.target_position >> 16) & 0x00ff;
-  map[10] = (output.target_position >> 24) & 0x00ff;
-  map[11] = (output.max_motor_speed) & 0x00ff;
-  map[12] = (output.max_motor_speed >>  8) & 0x00ff;
-  map[13] = (output.max_motor_speed >> 16) & 0x00ff;
-  map[14] = (output.max_motor_speed >> 24) & 0x00ff;
-  map[15] = (output.touch_probe_function) & 0x00ff;
-  map[16] = (output.touch_probe_function >> 8) & 0x00ff;
-  map[17] = (output.target_velocity) & 0x00ff;
-  map[18] = (output.target_velocity >>  8) & 0x00ff;
-  map[19] = (output.target_velocity >> 16) & 0x00ff;
-  map[20] = (output.target_velocity >> 24) & 0x00ff;
+  map[2] = (output.target_position) & 0x00ff;
+  map[3] = (output.target_position >>  8) & 0x00ff;
+  map[4] = (output.target_position >> 16) & 0x00ff;
+  map[5] = (output.target_position >> 24) & 0x00ff;
+  map[6] = (output.target_velocity) & 0x00ff;
+  map[7] = (output.target_velocity >>  8) & 0x00ff;
+  map[8] = (output.target_velocity >> 16) & 0x00ff;
+  map[9] = (output.target_velocity >> 24) & 0x00ff;
+  map[20] = output.operation_mode;
 
   for (unsigned i = 0; i < 25; ++i)
   {
@@ -69,20 +72,33 @@ void MinasClient::writeOutputs(const MinasOutput& output)
 MinasInput MinasClient::readInputs() const
 {
   MinasInput input;
-  uint8_t map[25];
-  for (unsigned i = 0; i < 25; ++i)
+  uint8_t map[19];
+  for (unsigned i = 0; i < sizeof(map); ++i)
   {
     map[i] = manager_.readInput(slave_no_, i);
   }
 
-  input.error_code			= *(uint16 *)(map+0);
-  input.statusword			= *(uint16 *)(map+2);
-  input.operation_mode			= *(uint8  *)(map+4);
-  input.position_actual_value		= *(uint32 *)(map+5);
-  input.velocity_actual_value		= *(uint32 *)(map+9);
-  input.torque_actual_value		= *(uint16 *)(map+13);
-  input.touch_probe_status		= *(uint16 *)(map+15);
-  input.touch_probe_posl_pos_value	= *(uint32 *)(map+17);
+  /*
+      SM3 inputs
+        addr b   index: sub bitl data_type    name
+    [0x004A.0] 0x6041:0x00 0x10 UNSIGNED16   Statusword
+    [0x004C.0] 0x6064:0x00 0x20 INTEGER32    Position Actual Value
+    [0x0050.0] 0x606C:0x00 0x20 INTEGER32    Velocity Actual Value
+    [0x0054.0] 0x3609:0x02 0x20 INTEGER32    Iq Actual Filtered
+    [0x0058.0] 0x6061:0x00 0x08 INTEGER8     Modes Of Operation Display
+    [0x0059.0] 0x3D00:0x02 0x20 UNSIGNED32   Group Error
+  */
+
+  input.error_code      = 0;
+  input.statusword      = *(uint16 *)(map+0);
+  input.position_actual_value   = *(uint32 *)(map+2);
+  input.velocity_actual_value   = *(uint32 *)(map+6);
+  input.operation_mode        = *(uint8  *)(map+10);
+  input.torque_actual_value   = 0;
+  input.touch_probe_status    = 0;
+  input.touch_probe_posl_pos_value  = 0;
+
+  input.error_code = manager_.readSDO<uint16>(slave_no_, 0x603f, 0);
 
   if (input.error_code >> 8 == 0xff) {
     int ecode = (input.error_code)&0x00ff;
@@ -109,14 +125,27 @@ MinasOutput MinasClient::readOutputs() const
     map[i] = manager_.readOutput(slave_no_, i);
   }
 
-  output.controlword			= *(uint16 *)(map+0);
-  output.operation_mode			= *(uint8  *)(map+2);
-  output.target_torque			= *(uint16 *)(map+3);
-  output.max_torque			= *(uint16 *)(map+5);
-  output.target_position		= *(uint32 *)(map+7);
-  output.max_motor_speed		= *(uint32 *)(map+11);
-  output.touch_probe_function		= *(uint16 *)(map+15);
-  output.target_velocity		= *(uint32 *)(map+17);
+/*
+      SM2 outputs
+        addr b   index: sub bitl data_type    name
+    [0x0016.0] 0x6040:0x00 0x10 UNSIGNED16   Controlword
+    [0x0018.0] 0x607A:0x00 0x20 INTEGER32    Target Position
+    [0x001C.0] 0x60FF:0x00 0x20 INTEGER32    Target Velocity
+    [0x0020.0] 0x6083:0x00 0x20 UNSIGNED32   Profile Acceleration
+    [0x0024.0] 0x6084:0x00 0x20 UNSIGNED32   Profile Deceleration
+    [0x0028.0] 0x6086:0x00 0x10 INTEGER16    Motion Profile Type
+    [0x002A.0] 0x6060:0x00 0x08 INTEGER8     Modes Of Operation
+    [0x002B.0] 0x0000:0x00 0x00
+*/
+
+  output.controlword      = *(uint16 *)(map+0);
+  output.target_position  = *(uint32 *)(map+2);
+  output.target_velocity  = *(uint32 *)(map+6);
+  output.operation_mode   = *(uint8  *)(map+20);
+  output.target_torque    = 0;
+  output.max_torque       = 0;
+  output.max_motor_speed  = 0;
+  output.touch_probe_function   = 0;
 
   return output;
 }
@@ -130,7 +159,7 @@ void MinasClient::reset()
   MinasOutput output;
   memset(&output, 0x00, sizeof(MinasOutput));
   output.controlword = 0x0080; // fault reset
-  output.operation_mode = 0x01; // position profile mode
+  output.operation_mode = 0x09; // position profile mode
   writeOutputs(output);
   input = readInputs();
 
@@ -154,7 +183,7 @@ void MinasClient::servoOn()
   printPDSStatus(input);
   MinasOutput output;
   memset(&output, 0x00, sizeof(MinasOutput));
-  output.operation_mode = 1; // pp (profile position mode)
+  output.operation_mode = 9; // pp (profile position mode)
   int loop = 0;
   while (getPDSStatus(input) != OPERATION_ENABLED)
   {
@@ -179,7 +208,7 @@ void MinasClient::servoOn()
     //usleep(SLEEP_TIME_MS*1000);
     Sleep(1000);
     input = readInputs();
-    if (loop++ % 100 == 1)
+    //if (loop++ % 100 == 1)
       printPDSStatus(input);
   }
 }
