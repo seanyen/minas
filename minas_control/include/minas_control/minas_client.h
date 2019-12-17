@@ -111,6 +111,8 @@ public:
    */
   void reset();
 
+  void init();
+
   /**
    * \brief Send servo on sequence to the controller
    * \return void

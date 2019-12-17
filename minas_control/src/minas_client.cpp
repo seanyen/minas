@@ -36,7 +36,7 @@ void MinasClient::writeOutputs(const MinasOutput& output)
 {
   // Default PDO Mapping 4 168 bit = 21  byte
   // PDO Mapping 4 + offset 200 bit = 25  byte
-  uint8_t map[25] = {0}; // array containing all 15 output registers
+  uint8_t map[6] = {0}; // array containing all 15 output registers
 
 /*
     SM2 outputs
@@ -53,17 +53,12 @@ void MinasClient::writeOutputs(const MinasOutput& output)
 
   map[0] = (output.controlword) & 0x00ff;
   map[1] = (output.controlword >> 8) & 0x00ff;
-  map[2] = (output.target_position) & 0x00ff;
-  map[3] = (output.target_position >>  8) & 0x00ff;
-  map[4] = (output.target_position >> 16) & 0x00ff;
-  map[5] = (output.target_position >> 24) & 0x00ff;
-  map[6] = (output.target_velocity) & 0x00ff;
-  map[7] = (output.target_velocity >>  8) & 0x00ff;
-  map[8] = (output.target_velocity >> 16) & 0x00ff;
-  map[9] = (output.target_velocity >> 24) & 0x00ff;
-  map[20] = output.operation_mode;
+  map[2] = (output.target_velocity) & 0x00ff;
+  map[3] = (output.target_velocity >>  8) & 0x00ff;
+  map[4] = (output.target_velocity >> 16) & 0x00ff;
+  map[5] = (output.target_velocity >> 24) & 0x00ff;
 
-  for (unsigned i = 0; i < 25; ++i)
+  for (unsigned i = 0; i < sizeof(map); ++i)
   {
     manager_.write(slave_no_, i, map[i]);
   }
@@ -72,7 +67,7 @@ void MinasClient::writeOutputs(const MinasOutput& output)
 MinasInput MinasClient::readInputs() const
 {
   MinasInput input;
-  uint8_t map[19];
+  uint8_t map[6];
   for (unsigned i = 0; i < sizeof(map); ++i)
   {
     map[i] = manager_.readInput(slave_no_, i);
@@ -91,14 +86,16 @@ MinasInput MinasClient::readInputs() const
 
   input.error_code      = 0;
   input.statusword      = *(uint16 *)(map+0);
-  input.position_actual_value   = *(uint32 *)(map+2);
-  input.velocity_actual_value   = *(uint32 *)(map+6);
-  input.operation_mode        = *(uint8  *)(map+10);
+  input.position_actual_value   = 0;
+  input.velocity_actual_value   = *(uint32 *)(map+2);
+  input.operation_mode        = 0;
   input.torque_actual_value   = 0;
   input.touch_probe_status    = 0;
   input.touch_probe_posl_pos_value  = 0;
 
+  input.operation_mode = manager_.readSDO<uint8>(slave_no_, 0x6061, 0);
   input.error_code = manager_.readSDO<uint16>(slave_no_, 0x603f, 0);
+  //manager_.write(1, 0, 0x0F);
 
   if (input.error_code >> 8 == 0xff) {
     int ecode = (input.error_code)&0x00ff;
@@ -119,8 +116,8 @@ MinasOutput MinasClient::readOutputs() const
 
   MinasOutput output;
 
-  uint8_t map[25];
-  for (unsigned i = 0; i < 25; ++i)
+  uint8_t map[6];
+  for (unsigned i = 0; i < sizeof(map); ++i)
   {
     map[i] = manager_.readOutput(slave_no_, i);
   }
@@ -139,15 +136,27 @@ MinasOutput MinasClient::readOutputs() const
 */
 
   output.controlword      = *(uint16 *)(map+0);
-  output.target_position  = *(uint32 *)(map+2);
-  output.target_velocity  = *(uint32 *)(map+6);
-  output.operation_mode   = *(uint8  *)(map+20);
+  output.target_position  = 0;
+  output.target_velocity  = *(uint32 *)(map+2);
+  output.operation_mode   = 0;
   output.target_torque    = 0;
   output.max_torque       = 0;
   output.max_motor_speed  = 0;
   output.touch_probe_function   = 0;
 
   return output;
+}
+
+void MinasClient::init()
+{
+  manager_.write(1, 0, 0x0F);
+  Sleep(1000);
+  manager_.write(1, 0, 0xFF);
+  Sleep(1000);
+  manager_.write(1, 0, 0x0F);
+  manager_.write(1, 1, 0xFE);
+  manager_.write(1, 2, 0xF4);
+  manager_.write(1, 3, 0xFE);
 }
 
 void MinasClient::reset()
@@ -161,6 +170,7 @@ void MinasClient::reset()
   output.controlword = 0x0080; // fault reset
   output.operation_mode = 0x09; // position profile mode
   writeOutputs(output);
+  manager_.writeSDO<uint16>(slave_no_, 0x6040, 0, output.controlword);
   input = readInputs();
 
   int loop = 0;
@@ -199,6 +209,9 @@ void MinasClient::servoOn()
       output.controlword = 0x000f; // move to operation enabled
       break;
     case OPERATION_ENABLED:
+      break;
+    case FAULT:
+      reset();
       break;
     default:
       printf("unknown status");
@@ -493,7 +506,7 @@ void MinasClient::setInterpolationTimePeriod(int us)
   int ret = 0;
   ret += manager_.writeSDO<uint32_t>(slave_no_, 0x1c32, 0x02, u32val);
   ret += manager_.writeSDO<uint8_t>(slave_no_, 0x60c2, 0x01, u8val);
-  printf("Set interpolation time period %d us (%d/%d)\n", us, u32val, u8val, ret);
+  printf("Set interpolation time period %d us (%d/%d) %d\n", us, u32val, u8val, ret);
 
   u32val = manager_.readSDO<uint32_t>(slave_no_, 0x1c32, 0x02);
   u8val = manager_.readSDO<uint8_t>(slave_no_, 0x60c2, 0x01);

@@ -274,6 +274,7 @@ EtherCatManager::~EtherCatManager()
 
 static int simco_setup(uint16 slave)
 {
+  printf("simco_setup: %d\n", slave);
     /*
     PDO mapping according to CoE :
     SM2 outputs
@@ -302,20 +303,45 @@ static int simco_setup(uint16 slave)
     ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
 
     /* Map velocity PDO assignment via Complete Access*/
-    uint16 assignment_TxPDO[] = {0x1a0b};
-    uint16 assignment_RxPDO[] = {0x160a};
+    uint16 assignment_TxPDO[] = {0x1a02};
+    uint16 assignment_RxPDO[] = {0x1602};
 
-    ec_SDOwrite(4, 0x1C12, 0x01, FALSE, sizeof(assignment_RxPDO), &assignment_RxPDO, EC_TIMEOUTSAFE);
+    ec_SDOwrite(slave, 0x1C12, 0x01, FALSE, sizeof(assignment_RxPDO), &assignment_RxPDO, EC_TIMEOUTSAFE);
     u8val = 1;
     ec_SDOwrite(slave, 0x1c12, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
 
-    ec_SDOwrite(4, 0x1C13, 0x01, FALSE, sizeof(assignment_TxPDO), &assignment_TxPDO, EC_TIMEOUTSAFE);
+    ec_SDOwrite(slave, 0x1C13, 0x01, FALSE, sizeof(assignment_TxPDO), &assignment_TxPDO, EC_TIMEOUTSAFE);
     u8val = 1;
     ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
     return 0;
 }
 
+static int flexisoft_setup(uint16 slave)
+{
+  printf("flexisoft_setup: %d\n", slave);
+
+  uint8 u8val = 0;
+  ec_SDOwrite(slave, 0x1c12, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+  u8val = 0;
+  ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+  /* Map velocity PDO assignment via Complete Access*/
+  uint16 assignment_TxPDO[] = {0x1a00};
+  uint16 assignment_RxPDO[] = {0x1600};
+
+  ec_SDOwrite(slave, 0x1C12, 0x01, FALSE, sizeof(assignment_RxPDO), &assignment_RxPDO, EC_TIMEOUTSAFE);
+  u8val = 1;
+  ec_SDOwrite(slave, 0x1c12, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+
+  ec_SDOwrite(slave, 0x1C13, 0x01, FALSE, sizeof(assignment_TxPDO), &assignment_TxPDO, EC_TIMEOUTSAFE);
+  u8val = 1;
+  ec_SDOwrite(slave, 0x1c13, 0x00, FALSE, sizeof(u8val), &u8val, EC_TIMEOUTRXM);
+  return 0;
+}
+
 #define IF_MINAS(_ec_slave) ((int)_ec_slave.eep_man == 0x010a)
+#define IF_FLEXISOFT(_ec_slave) ((int)_ec_slave.eep_man == 0x01000056)
 bool EtherCatManager::initSoem(const std::string& ifname) {
   // Copy string contents because SOEM library doesn't 
   // practice const correctness
@@ -363,9 +389,12 @@ bool EtherCatManager::initSoem(const std::string& ifname) {
 
   for( int cnt = 1 ; cnt <= ec_slavecount ; cnt++)
   {
-    if (! IF_MINAS(ec_slave[cnt])) continue;
-
-    ec_slave[cnt].PO2SOconfig = &simco_setup;
+    if (IF_MINAS(ec_slave[cnt])){
+      ec_slave[cnt].PO2SOconfig = &simco_setup;
+    }
+    if (IF_FLEXISOFT(ec_slave[cnt])){
+      ec_slave[cnt].PO2SOconfig = &flexisoft_setup;
+    }
   }
 
   // configure IOMap

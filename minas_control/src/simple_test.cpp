@@ -165,6 +165,7 @@ int main(int argc, char *argv[])
     for (std::vector<minas_control::MinasClient *>::iterator it = clients.begin(); it != clients.end(); ++it)
     {
       minas_control::MinasClient *client = (*it);
+      client->init();
       // clear error
       client->reset();
 
